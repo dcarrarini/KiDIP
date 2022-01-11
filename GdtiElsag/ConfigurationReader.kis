@@ -1,0 +1,6 @@
+function GetPropValue(String sKey) : String
+   InputStream is = download("/AlperiaBidEvolution/GdtiElsag/cfg/config.properties")
+   Reader rConf = Reader.csvLoad(is, "=", false,0,null).filter("F0 = sKey").select("F1")
+   rConf.next()
+   GetPropValue=rConf.getField(0).getString()
+endfunc

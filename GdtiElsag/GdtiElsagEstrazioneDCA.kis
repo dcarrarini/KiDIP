@@ -1,0 +1,138 @@
+module de.kisters.kiscript.httpfluent.FluentHttp
+module de.kisters.kiscript.json.Json
+module de.kisters.formulaSystem.rsa.RSA
+module de.kisters.kiscript.http.Client
+
+include /AlperiaBidEvolution/ConfigurationLoader.kis
+
+function gdti_elsag_estr_newmetrica() : Boolean
+    
+    gc()
+    
+   	Error errorHttp
+   	JsonValue body = JsonValue.parse(download("/AlperiaBidEvolution/jsonRequest.json"))
+   	
+   	// Configuro il timezone
+    setTimezone("Europe/Berlin")
+    setUseDST(true)
+    
+    Logger log = new Logger("gdti_elsag_estr_newmetrica")
+    Log4KWriter(2, "gdti_elsag_estr_newmetrica - Start extraction" )
+    
+    try        
+        // Autenticazione
+		HttpConfiguration cfg = new HttpConfiguration()
+		HttpConfiguration.trustSelfSignedCertificates(cfg, true)
+		Http http = new Http("text/html", cfg)
+		HttpExecutor ex = HttpExecutor.newInstance(http)
+		
+		String data_servers_access_token = "https://bidevoalpprod.westeurope.cloudapp.azure.com/oauth/token"
+		
+		HttpForm form = HttpForm.form() &
+            .add("client_id", "738e4b68884421bfd674129b") &
+            .add("client_secret", "6c3e06a838922e2c912be063bfea472281f03b359d55313b0b1572c9306e2fe4") &
+            .add("grant_type", "client_credentials") 
+		HttpRequest req_DataServers = HttpRequest.Post(data_servers_access_token).bodyForm(form, "utf-8").addHeader("Cache-Control", "no-cache").addHeader("Content-Type", "application/x-www-form-urlencoded")
+		HttpResponse response = ex.execute(req_DataServers)
+
+		JsonValue jbodyResp = JsonValue.parse(response.returnContent().asStream(),  "utf-8")
+	
+		// Log4KWriter(2, "gdti_elsag_estr_newmetrica - response access -> (" + response.getStatusCode() +")")
+		// Log4KWriter(2, "gdti_elsag_estr_newmetrica response access_token --> " + jbodyResp.access_token)
+		// Log4KWriter(2, "gdti_elsag_estr_newmetrica response token_type --> " + jbodyResp.token_type)
+		// Log4KWriter(2, "gdti_elsag_estr_newmetrica response expires_in (sec) --> " + jbodyResp.expires_in)
+		// Log4KWriter(2, "gdti_elsag_estr_newmetrica response refresh_token --> " + jbodyResp.refresh_token)
+		
+		// Connessione al DB
+		// let dbConn = createOraConnection("belvis", "BELVIS" , "192.168.34.207:1521/EAM" ) // Ambiente di Esercizio
+    	let dbConn = createOraConnection("belvis", "BELVIS" , "192.168.34.203:1521/EAMTEST" ) // Ambiente di Test
+    			
+		// Lista unità (Lista impianti)
+		String data_servers_dati = "https://bidevoalpprod.westeurope.cloudapp.azure.com/api/units"
+    	HttpRequest req_dati = HttpRequest.Get(data_servers_dati).addHeader("Authorization", "Bearer "+jbodyResp.access_token).addHeader("Cache-Control", "no-cache")
+		HttpResponse res_dati = ex.execute(req_dati)
+		
+		JsonValue myJson = JsonValue.parse(res_dati.returnContent().toString())		
+		// Log4KWriter(2, "gdti_elsag_estr_newmetrica response dati --> " + myJson.asPrettyString())
+		
+		JsonValue myJsonArray = JsonValue.createArray(myJson.getReader())
+		Integer jsItemsSize = myJsonArray.size()
+		
+		Log4KWriter(2, "gdti_elsag_estr_newmetrica Numero impianti --> " + jsItemsSize)
+		
+		Integer jj = 0
+
+		for jj = 0 to jsItemsSize-1 step 1
+
+		    // Unit Schedules
+			String unitName = myJsonArray.getAt(jj).get("name").asString()
+			Log4KWriter(2, "gdti_elsag_estr_newmetrica unitName --> " + unitName)
+			
+			//String flow_date = "2020-10-25"
+			Timestamp tsfd = now()
+			String flow_date = strts(tsfd, "%Y-%m-%d")
+			
+			Log4KWriter(2, "gdti_elsag_estr_newmetrica flow_date --> " + flow_date)
+			
+			
+			//DOWNLOAD DATI
+			HttpRequest req_schedules = HttpRequest.Put("https://bidevoalpprod.westeurope.cloudapp.azure.com/api/realtime/plans").bodyString(body.asString(), "application/json", "utf-8").addHeader("Authorization", "Bearer "+jbodyResp.access_token).addHeader("Cache-Control", "no-cache").addHeader("Accept", "application/json")
+			HttpResponse res_schedules = ex.execute(req_schedules)			
+			JsonValue myJsonSch = JsonValue.parse(res_schedules.returnContent().toString())		
+			// Log4KWriter(2, "gdti_elsag_estr_newmetrica response dati --> " + myJsonSch.asPrettyString())
+			JsonValue myJsonSchArray = JsonValue.createArray(myJsonSch.getReader())
+			Integer jsItemsSchSize = myJsonSchArray.size()
+			
+			
+			/*
+	    	String data_servers_schedules = "https://bidevoalpprod.westeurope.cloudapp.azure.com/api/units/us/" + unitName + "/" + flow_date // + "?m=<market>&c=<cum>"
+	    	HttpRequest req_schedules = HttpRequest.Get(data_servers_schedules).addHeader("Authorization", "Bearer "+jbodyResp.access_token).addHeader("Cache-Control", "no-cache")
+			HttpResponse res_schedules = ex.execute(req_schedules)
+			
+			JsonValue myJsonSch = JsonValue.parse(res_schedules.returnContent().toString())		
+			// Log4KWriter(2, "gdti_elsag_estr_newmetrica response dati --> " + myJsonSch.asPrettyString())
+			
+			JsonValue myJsonSchArray = JsonValue.createArray(myJsonSch.getReader())
+			Integer jsItemsSchSize = myJsonSchArray.size()
+			
+			Log4KWriter(2, "gdti_elsag_estr_newmetrica Numero impianti --> " + jsItemsSchSize)
+			*/
+			Integer js = 0
+			for js = 0 to jsItemsSchSize-1 step 1
+				String market = myJsonSchArray.getAt(js).get("market").asString()
+				Log4KWriter(2, "gdti_elsag_estr_newmetrica market --> " + market)
+				
+				JsonValue jsonVals = JsonValue.parse(myJsonSchArray.getAt(js).get("values").asString())
+						
+				Reader jsValReader = jsonVals.getReader().makeRewindable()
+				ValueBuffer vbVals = jsValReader.getValueBuffer()
+				ValueBuffer vbValst = vbVals.transpose("1", 0, -1, 0, -1, 1)
+				
+				Integer vals = vbValst.getRecCount()
+				
+				Integer va = 0
+				for va = 0 to vals-1 step 1
+					String sSqlIns = "INSERT INTO UNIT_SCHEDULE (DATA, UNITA, MERCATO, INTERVALLO, VALORE) " + &
+								 " VALUES (" + flow_date.replaceAll("-", "") + ", '" + unitName + "', '" +  market + "', " + (va*4 + 1) + ", " + vbValst.getAt(va, 0).asFloat() + " )" 
+								 
+					// Log4KWriter(2, "gdti_elsag_estrazione sSqlIns --> " + sSqlIns)
+			
+					dbConn.execute(sSqlIns)
+				
+					dbConn.commit()					    
+				next
+			next
+		next		
+		
+		dbConn.close()
+	
+    catch errorHttp
+		Log4KWriter(1, "ERROR Http Connection: -- ErrorKey:" + errorHttp.getKey() + " ErrorMessage:" + errorHttp.getMessage())
+		log.err("ERROR Http Connection: -- ErrorKey:"+ errorHttp.getKey() + " ErrorMessage:" + errorHttp.getMessage())
+		return false
+	endtry   
+
+    Log4KWriter(2, "gdti_elsag_estr_newmetrica Extraction completed" )
+    gdti_elsag_estr_newmetrica = true
+
+endfunc

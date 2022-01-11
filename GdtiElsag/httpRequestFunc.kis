@@ -1,0 +1,148 @@
+module de.kisters.kiscript.httpfluent.FluentHttp
+module de.kisters.kiscript.json.Json
+module de.kisters.formulaSystem.rsa.RSA
+module de.kisters.kiscript.http.Client
+
+include /AlperiaBidEvolution/ConfigurationLoader.kis
+include /AlperiaBidEvolution/GdtiElsag/dbOperation.kis
+include /AlperiaBidEvolution/GdtiElsag/Log4K.kis
+
+/**
+ * get authentication token
+ *@return JsonValue
+ */
+function getAuth() : JsonValue
+    Error e
+    try
+        gc()
+        Error errorHttp
+        setTimezone("Europe/Berlin")
+        setUseDST(true)
+        HttpConfiguration cfg = new HttpConfiguration()
+        HttpConfiguration.trustSelfSignedCertificates(cfg, true)
+        Http http = new Http("text/html", cfg)
+        HttpExecutor ex = HttpExecutor.newInstance(http)
+        String data_servers_access_token = "https://bidevoalpprod.westeurope.cloudapp.azure.com/oauth/token"         
+        HttpForm form = HttpForm.form() &
+        .add("client_id", "738e4b68884421bfd674129b" ) &
+        .add("client_secret", "6c3e06a838922e2c912be063bfea472281f03b359d55313b0b1572c9306e2fe4") &
+        .add("grant_type", "client_credentials" )
+        HttpRequest req_DataServers = HttpRequest.Post(data_servers_access_token).bodyForm(form, "utf-8" ).addHeader("Cache-Control", "no-cache" ).addHeader("Content-Type", "application/x-www-form-urlencoded" )
+        HttpResponse response = ex.execute(req_DataServers)
+        JsonValue jsAuth = JsonValue.parse(response.returnContent().asStream(), "utf-8" )
+        fLog4KWriter(2, "getAuth --> Authenticated successfully")
+        return jsAuth
+    catch e
+        fLog4KWriter(1, "getAuth --> ErrorKey:"+ e.getKey() + " ErrorMessage:" + e.getMessage())
+    endtry
+endfunc
+
+/**
+ *	Retrieve UP list
+ *@param jsAuth (JsonValue with authentication token)
+ *@return JsonValue
+ */
+function getUPList(JsonValue jsAuth) : JsonValue
+    Error e
+    try
+        HttpConfiguration cfg = new HttpConfiguration()
+    	HttpConfiguration.trustSelfSignedCertificates(cfg, true)
+	    Http http = new Http("text/html", cfg)
+	    HttpExecutor ex = HttpExecutor.newInstance(http)
+	    String data_servers_dati = "https://bidevoalpprod.westeurope.cloudapp.azure.com/api/units" 
+	    HttpRequest req_dati = HttpRequest.Get(data_servers_dati).addHeader("Authorization", "Bearer " + jsAuth.access_token).addHeader("Cache-Control", "no-cache" )
+	    HttpResponse res_dati = ex.execute(req_dati)
+	    JsonValue myJson = JsonValue.parse(res_dati.returnContent().toString())
+	    JsonValue jsUPList = JsonValue.createArray(myJson.getReader())
+	    fLog4KWriter(2, "getUPList --> UP list retrived")	    
+    	return jsUPList
+    catch e 
+        fLog4KWriter(1, "getUPList --> ErrorKey:"+ e.getKey() + " ErrorMessage:" + e.getMessage())
+    endtry
+   
+endfunc
+
+/**
+ *	Download UP list from Belvis database
+ *@return Reader
+ */
+function belvisUPList () : Reader
+    DBConnection db = openDBConnection()
+    String retrieveUPList = " distinct kuerzel_pe_s as up from  V_SD_PRODEINH order by 1"
+    Reader r = db.select(retrieveUPList)
+    closeDBConnection(db)
+    return r
+endfunc
+
+/**
+ *	Compose the json formatted string to be passed for data download 
+ *@param jsUPList (JsonValue containing UP list)
+ *@return
+ */
+function composeJsonRequest(JsonValue jsUPList, Integer days) : String
+    Error e
+    try
+        Integer jj = 0
+    	String unitNameListFor
+    	String subTypeCategory
+    	String sDay = Timestamp.asString(now().addDay(days), "%Y-%m-%d" )
+    	Integer iUPItems
+    	String req
+    	iUPItems = jsUPList.size()
+    //FILTRO IDRO
+/*
+ * for jj = 0 to iUPItems - 1 step 1
+ * subTypeCategory = jsUPList.getAt(jj).get("subTypeCategory").asString()
+ * if (subTypeCategory.contains("IDRO") or subTypeCategory.contains("UVAM")) then
+ * unitNameListFor = unitNameListFor + ' "'+jsUPList.getAt(jj).get("name").asString()+'" '
+ * if (jj < iUPItems - 1) then
+ * unitNameListFor = unitNameListFor + ','
+ * endif
+ * endif
+ * next*/
+    	Reader upList = belvisUPList().makeRewindable()
+    	for jj = 0 to iUPItems - 1 step 1
+    	    String upName = jsUPList.getAt(jj).get("name").asString()
+    	    if (upList.filter("up=upName").next()) then
+    	        unitNameListFor = unitNameListFor + ' "'+upName+'" '	        
+	            if (jj < iUPItems - 1) then
+            	    unitNameListFor = unitNameListFor + ','
+        	    endif
+        	    upList.rewind()
+    	    endif
+	    next
+	    req = '{"unitNames": ['
+    	req = req + unitNameListFor
+	    req = req +'],"flowDate" :"'+sDay
+    	req = req +'"," planType ":"PV,PVM,PVMC", "granularity": "Minutes15"}'
+    	fLog4KWriter(2, "composeJsonRequest --> json composed")
+ 		fLog4KWriter(2, "composeJsonRequest JSON --> "+ req) 
+    	return req 
+    catch e
+        fLog4KWriter(1, "composeJsonRequest --> ErrorKey:"+ e.getKey() + " ErrorMessage:" + e.getMessage())
+    endtry
+
+endfunc
+
+/**
+ *	Download UP measures
+ *@param sJsonBodyRequest (the json formatted string to be passed for data download)
+ *@param jsAuth (JsonValue with authentication token)
+ *@return JsonValue
+ */
+function getData(String sJsonBodyRequest,JsonValue jsAuth) : JsonValue
+    Error e
+    try
+        HttpConfiguration cfg = new HttpConfiguration()
+    	HttpConfiguration.trustSelfSignedCertificates(cfg, true)
+    	Http http = new Http("text/html", cfg)
+    	HttpExecutor ex = HttpExecutor.newInstance(http)
+    	HttpRequest reqGetData = HttpRequest.Put("https://bidevoalpprod.westeurope.cloudapp.azure.com/api/realtime/plans").bodyString(sJsonBodyRequest, "application/json" , "utf-8" ).addHeader("Authorization", "Bearer " + jsAuth.access_token).addHeader("Cache-Control", "no-cache" ).addHeader("Accept", "application/json" )
+    	HttpResponse resGetData = ex.execute(reqGetData)
+    	JsonValue myJsonSch = JsonValue.parse(resGetData.returnContent().toString())
+    	fLog4KWriter(2, "getData --> data download completed")
+    	return myJsonSch
+    catch e
+        fLog4KWriter(1, "getData --> ErrorKey:"+ e.getKey() + " ErrorMessage:" + e.getMessage())
+    endtry   
+endfunc

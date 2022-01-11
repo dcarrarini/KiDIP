@@ -1,0 +1,98 @@
+/*
+ *	BaseLogDir  - Directory dove viene scritto il file. Deve terminare con il carattere \ o /
+ *	LogFileName - Nome del file di log. Da specificare senza estensione
+ *	LogFileType - bySize: il log viene switchato al raggiungimento del valore in Mb configurato con chiave LogSize
+ *				  daily: viene creato un nuovo file ogni giorno. Con questa impostazione non viene preso in considerazione il parametro LogSize	
+ *	LogSize     - Dimensione massima che può raggiungere un file di log prima che venga archiviato il file corrente e creato un nuovo file
+ *	LogLevel	- 1: Error
+ *				  2: Info
+ * 				  3: Debug
+ */
+ 
+File fLogFile
+String strLogLevel = "" 
+
+
+function loadLog4KConf(String sKey) : String
+       try
+        InputStream is = download("/AlperiaBidEvolution/GdtiElsag/cfg/Log4K.properties")
+        Reader rConf = Reader.csvLoad(is, "=" , false, 0, null).filter("F0 = sKey").select("F1")
+        rConf.next()
+        loadLog4KConf = rConf.getField(0).getString()
+    endtry
+endfunc
+
+
+String strBaseLogDir = loadLog4KConf("BaseLogDir")
+String strLogFileName = loadLog4KConf("LogFileName")
+String strLogFileType = loadLog4KConf("LogFileType")
+Integer intLogLevel = vali(loadLog4KConf("LogLevel"))
+Integer intLogSize = vali(loadLog4KConf("LogSize"))
+Integer intLogCount = 1
+
+function Log4KFileGest() : String
+    if strLogFileType = "daily" and intLogCount = 1 then
+        strLogFileName = strts(now(), "%Y%m%d" ) + "_" + strLogFileName
+        intLogCount = intLogCount+1
+    elseif strLogFileType = "bySize" then
+        strLogFileName = strLogFileName
+        File fLogFileCheck = new File (strBaseLogDir + strLogFileName + ".log" )
+        if (fLogFileCheck.exists()) then
+            if (vali((fLogFileCheck.getSize() / 1024 / 1024).asString('###')) > intLogSize) then
+                fLogFileCheck.rename(strBaseLogDir + strts(now(), "%Y%m%d%H%M%S_ARC" ) + "_" + strLogFileName + ".log" )
+            endif
+        endif
+    endif
+    Log4KFileGest = strLogFileName
+endfunc
+
+function decodeLog4KLevel (Integer iLogLevel) : String
+    if iLogLevel = 1  then
+        decodeLog4KLevel = "Error" 
+    elseif iLogLevel = 2 then
+        decodeLog4KLevel = "Info" 
+    elseif iLogLevel = 3  then
+        decodeLog4KLevel = "Debug" 
+    endif
+endfunc
+
+function fLog4KWriter(Integer iLogLevel, String sLogMessage) : Integer
+    Error e
+    Logger log = new Logger("prova log")
+    log.info("iLogLevel "+iLogLevel) 
+    log.info("intLogLevel "+intLogLevel) 
+    if (iLogLevel <= intLogLevel) then
+        log.info("in if ") 
+        strLogLevel = decodeLog4KLevel(iLogLevel)
+        Timestamp ts = now()
+        String LogFileName = Log4KFileGest()
+        fLogFile = new File (strBaseLogDir + strLogFileName + ".log" )
+        fLogFile.setCharset("UTF-8")
+        fLogFile.openAppend()
+        fLogFile.writeLn(ts + " - " + strLogLevel + ": " + sLogMessage)
+        fLogFile.close()
+        fLog4KWriter = 1
+    else
+        fLog4KWriter = 2
+    endif
+endfunc
+
+function fLog4KOReader (Integer iLogLevel, Reader r) : Integer
+    Timestamp ts = now()
+    if (iLogLevel <= intLogLevel) then
+        strLogLevel = decodeLog4KLevel(iLogLevel)
+        fLogFile = new File (strBaseLogDir + strLogFileName + ".log" )
+        fLogFile.setCharset("UTF-8")
+        fLogFile.openAppend()
+        ValueBuffer vb = r.ValueBuffer()
+        while not vb.eovb()
+            String line = vb.getLine("      ")
+            fLogFile.writeLn(line)
+            vb.skip(1)
+        endwhile
+        fLogFile.close()
+        fLog4KOReader = 1
+    else
+        fLog4KOReader = 2
+    endif
+endfunc

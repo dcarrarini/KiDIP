@@ -1,0 +1,27 @@
+include /AlperiaBidEvolution/GdtiElsag/Log4K.kis
+/**
+ * Connect to Oracle database
+ *@return DBConnection
+ */
+function openDBConnection() : DBConnection
+    Error e
+    try
+        return createOraConnection ("BELVIS", "BELVIS" , "192.168.34.207:1521/EAM" )
+    catch e
+        fLog4KWriter(1, "Error during db connection --> " + e.getKey() +" -- " +e.getMessage())
+    endtry
+endfunc
+
+/**
+ * Close passed db connection
+ *@param dbConnection 
+ *@return Integer
+ */
+function closeDBConnection (DBConnection dbConnection) : Integer
+    Error e
+    try
+        return dbConnection.close()
+    catch e
+        fLog4KWriter(1, "Error during db connection --> " + e.getKey() +" -- " +e.getMessage())
+    endtry    
+endfunc

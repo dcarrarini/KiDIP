@@ -1,0 +1,109 @@
+module de.kisters.kiscript.json.Json
+include /AlperiaBidEvolution/GdtiElsag/Log4K.kis
+include /AlperiaBidEvolution/GdtiElsag/ConfigurationReader.kis
+/**
+ * Create Belvis import files
+ *@param jData JsonValue 
+ *@return Integer
+ */
+function createImportFile(JsonValue jData, Integer days) : Integer
+    Error e
+    try
+        String TempExportPath =  GetPropValue("tempExportPath")
+    	Reader r = jData.getReader().filter ("error = null").makeRewindable()
+    	String NomeUP
+    	String keyName
+    	String value
+    	Timestamp t = Timestamp(now().addDay(days))
+		String sts
+		Timestamp ts
+    	while (r.next())
+    	    String upName = r.getField("unitName").getString()
+    	    File f = new File(TempExportPath + upName+"_PV"+ t.asString("%Y%m%d") + ".csv")
+    		f.setCharset("UTF-8")
+        	f.openAppend()
+        	f.writeLn("NOME_UP;DATA;VALORE")
+        
+        //PV data
+        	JsonValue js = JsonValue.parse(r.getField("pv").getString())
+        	Reader rJS = js.getReader().makeRewindable()
+        	Reader colSel = rJS.desc().Reader().makeRewindable()
+        	while (colSel.next())
+        	    NomeUP=upName+"_PV"
+        	    keyName = colSel.getField("NAME").getString()
+        	    value= JsonValue.get(js, keyName).asString()
+       	     sts = left(colSel.getField("NAME").getString(),19).replaceAll("T"," ")
+       	     ts = Timestamp(sts).addMinute(15)
+		 	 sts = ts.asString("%Y%m%d %H:%M:%S") 
+         	 f.writeLn(NomeUP+";"+sts+";"+value)
+        	endwhile
+        	fLog4KWriter(3,"UP "+ NomeUP + " Export complete")
+        	js = JsonValue.parse(r.getField("pvm").getString())
+        	rJS = js.getReader().makeRewindable()
+        	colSel = rJS.desc().Reader().makeRewindable()
+        	while (colSel.next())
+        	    NomeUP=upName+"_PVM"
+        	    keyName = colSel.getField("NAME").getString()
+        	    value= JsonValue.get(js, keyName).asString()
+        	    sts = left(colSel.getField("NAME").getString(),19).replaceAll("T"," ")
+        	    ts = Timestamp(sts).addMinute(15)
+				sts = ts.asString("%Y%m%d %H:%M:%S") 
+         	   f.writeLn(NomeUP+";"+sts+";"+value)
+       	 endwhile
+        	fLog4KWriter(3,"UP "+ NomeUP + " Export complete")
+        
+        	js = JsonValue.parse(r.getField("pvmc").getString())
+        	rJS = js.getReader().makeRewindable()
+        	colSel = rJS.desc().Reader().makeRewindable()
+        	while (colSel.next())
+       	    	NomeUP=upName+"_PVMC"
+            	keyName = colSel.getField("NAME").getString()
+            	value= JsonValue.get(js, keyName).asString()
+            	sts = left(colSel.getField("NAME").getString(),19).replaceAll("T"," ")
+            	ts = Timestamp(sts).addMinute(15)
+				sts = ts.asString("%Y%m%d %H:%M:%S") 
+            	f.writeLn(NomeUP+";"+sts+";"+value)
+        	endwhile
+        	fLog4KWriter(3,"UP "+ NomeUP + " Export complete")
+        	f.close()
+   		endwhile
+    	fLog4KWriter(2, "createImportFile --> Files created successfully")
+    catch e
+    	fLog4KWriter(1, "createImportFile --> ErrorKey:"+ e.getKey() + " ErrorMessage:" + e.getMessage())	   
+    endtry
+endfunc
+
+/**
+ * Move generated Belvis import file from temporary folder to import one
+ *@return Integer 
+ */
+function moveFile(String sFileSource, String sFileTarget) : Integer
+    Error e
+    Reader rFile
+    //String sFileSource="D:\KiDIP\GDTIELSAGIMPORT\Extraction\"
+    //String sFileTarget="D:\KiDIP\GDTIELSAGIMPORT\Import\"
+	Integer i
+    try
+        File f = new File (sFileSource)
+        rFile = f.getListSub("*").makeRewindable()
+        while (rFile.next())
+            Error eMove
+            try
+                File fMove = new File(rFile.getField(2).getString())
+                i = fMove.move(sFileTarget, true)
+                if (i = 1) then
+					fLog4KWriter(1,"moveFile -->" + fMove.getAbsolutePath() + " file not moved, because destination exists")
+                elseif (i = 3) then
+					fLog4KWriter(1,"moveFile -->" + fMove.getAbsolutePath() + " file not moved")
+                endif
+            catch eMove
+                fLog4KWriter(1, "moveFile --> ErrorKey:" + eMove.getKey() + " ErrorMessage:" + eMove.getMessage())
+            endtry
+
+        endwhile
+        fLog4KWriter(2, "moveFile --> Files moved to Belvis import directory")
+    catch e
+        fLog4KWriter(1, "moveFile --> ErrorKey:" + e.getKey() + " ErrorMessage:" + e.getMessage())
+    endtry 
+    moveFile=i
+endfunc
