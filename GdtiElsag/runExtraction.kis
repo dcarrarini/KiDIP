@@ -3,28 +3,6 @@ include /AlperiaBidEvolution/GdtiElsag/importFileGeneration.kis
 include /AlperiaBidEvolution/GdtiElsag/Log4K.kis
 include /AlperiaBidEvolution/GdtiElsag/ConfigurationReader.kis
 
-/*
-fLog4KWriter(2, "Process start")
-//Get authentication
-JsonValue jsAuth =  getAuth()
-//Get up list
-JsonValue jsUPList = getUPList(jsAuth)
-//Create json request
-String sJsonBodyRequest = composeJsonRequest(jsUPList)
-//Get data
-JsonValue jData = getData(sJsonBodyRequest,jsAuth)
-//Create import file
-createImportFile(jData)
-//Move generated file to Belvis import directory
-String sFileSource=GetPropValue("tempExportPath")
-String sFileTarget=GetPropValue("belvisImportPath")
-moveFile(sFileSource, sFileTarget)
-fLog4KWriter(1, "Process completed")
-//Reader r = jsUPList.getReader()
-*/
-
-
-
 
 fLog4KWriter(2, "Process start")
 //Get authentication
